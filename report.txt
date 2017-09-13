@@ -1,0 +1,47 @@
+Design Decisions:
+> Initial size of population increases linearly with the number of cities and is given by the following formula: 
+	initSize = 500 + (dim-10)*380  if dim>=10
+		 = dim*dim 		  if dim<10
+	where dim = number of cities
+This is done to ensure what is specified in the Statement of work, ‘Choose an initial population from 500 to 10000 for cities ranging from 10 to 35’.  
+
+> Selection of parents to generate the offsprings is done using Roulette-Wheel selection technique. Number of parent pairs selected is equal to the initial population size. Fitter chromosomes have a higher probability of becoming parents in this strategy but it also prevents premature convergence by selecting less fit chromosomes. This process is optimised using the following strategy. 
+
+1. Select randomly one of the individuals (say, i). The selection is done with uniform probability (1/N), which does not depend on the individual’s fitness wi (Fig. 2).
+2. With probability wi/wmax, where wmax = max{wi} is the maximal fitness in the population, the selection is accepted. Otherwise, the procedure is repeated from step 1 (i.e., in the case of rejection, another selection attempt is made).
+
+This strategy is proposed in the following paper: https://arxiv.org/pdf/1109.3627.pdf
+
+> Recombination is performed using both PMX and GX. For each pair of parents, with probability 0.8, both recombination techniques are applied to generate 4 offsprings and with probability 0.2, no recombination is applied and both parents are directly added to the offsprings.
+
+>  During mutation, for each offspring, with probability 0.1, 2 of its genes are swapped and with probability 0.9, no change is done. 
+> At the end of each iteration, a set of fittest chromosomes are chosen from the generated offsprings as the population for the next iteration.
+
+> The fittest chromosome is stored when the initial population is generated. If any offspring’s fitness is greater than this fittest chromosome, then this offspring is chosen as the fittest chromosome. This check is performed twice for every iteration, once at the end of recombination and second at the end of mutation. At the end, the output is the fittest chromosome encountered in all iteration.
+
+> Stopping condition is on the number of iterations and is set to 10.000 iterations.
+
+
+Parallelization and Load Balancing Strategy:
+
+> Instead of parallelising the main loop, smaller loops inside the main loop are parallelized. This seemed like an obvious choice as if the main loop was parallelized, then it is likely that different threads will do redundant work which will not be of any benefit.
+
+> The following parts of the program are parallelized using ‘#pragma omp parallel for’:
+
+- Creating the distance matrix where dist[i][j] stores the distance between city i and city j. This is done once in the beginning of the program so that distances do not have to be computed every time to calculate the tour length. Used static scheduling since each iteration requires the same amount of work to be done.
+- Generating the initial population. Used static scheduling since work done to generate every chromosome is identical.
+- Roulette Wheel selection. Used guided scheduling since work done for each selection is not fixed and depends on the random number sampled at runtime.
+- Crossover loop. Used guided scheduling since a pair of parents might not be crossed over depending upon the sampled random number at runtime. So work done in each iteration is not constant.
+- Mutation loop. Used guided scheduling as, like crossover, work done in an iteration is dependent on the random number sampled at runtime.
+
+> Care has been taken to prevent the use of the ‘critical’ construct as it affects the performance. To prevent data races while accessing shared variables, the shared variable is replaced by an array of size equal to number of threads where each element in array is modified by a thread assigned to it. At the end of the loop, these thread local variables are merged sequentially to populate the shared variable. This way we extract maximum efficiency from parallel threads.
+
+
+Extra Credit Strategy:
+
+> Recombination is now performed as follows:
+
+1) With probability 0.8, ONLY ONE of the four recombination techniques is used. In case of recombination, CX is selected with probability 0.1, PMX is selected with probability 0.2, ERX is selected with probability 0.2 and GX is selected with probability 0.5 for crossover.
+2) With probability 0.2, the parents are copied into the offspings.
+
+These probabilities are so chosen as GX generally gives very good results as compared to other strategies while CX does not.
